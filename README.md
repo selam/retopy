@@ -79,9 +79,6 @@ class MyCounterHandler(CommandHandler):
             pass
         self.write("+OK")
 
-    @parameter
-    def ping(self):
-        self.write("+PONG")
 
 class MyPingHandler(CommandHandler):
     @parameter
@@ -93,7 +90,7 @@ class MyApplication(Application):
 
     def __init__(self):
         handlers = [
-           (MyCommandHandler),
+           (MyCounterHandler),
            (MyPingHandler)
         ]
         settings = {
