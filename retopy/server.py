@@ -92,6 +92,8 @@ class ConnectionContext(object):
     def __init__(self, stream, address):
         self.address = address
         self.headers = {}
+        self._user = None
+
         # Save the socket's address family now so we know how to
         # interpret self.address even after the stream is closed
         # and its socket attribute replaced with None.
@@ -124,6 +126,13 @@ class ConnectionContext(object):
     def is_headers_received(self):
         return True if self.headers else False
 
+    @property
+    def user(self):
+        return self._user
+
+    @user.setter
+    def user(self, value):
+        self._user = value
 
 class MalFormatInput(Exception):
     def __init__(self, message):
@@ -288,7 +297,6 @@ class RequestConnection(object):
                 for char in line:
                     if char in (" ", "\t", "\n", "\r", "\v", "\f"):
                         continue
-                    print char
                     in_quote = False
                     in_single_quote = False
                     current = ""

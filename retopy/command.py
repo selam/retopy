@@ -88,6 +88,17 @@ def parameter(name=None, multiple=False, help=None, default=None, type=None):
     return decorator
 
 
+def authenticated(method):
+    """Decorate methods with this to require that the user be logged in.
+    """
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        if not self.command.user:
+            raise CommandError("Authorization required")
+        return method(self, *args, **kwargs)
+    return wrapper
+
+
 class Command(object):
     _COMMAND_ARGUMENT_MAP = {}
 
@@ -96,6 +107,7 @@ class Command(object):
         self.connection = connection
         self.headers = headers
         self.parameters = {}
+        self._user = None
 
     def __repr__(self):
         return "%s(%s)" % (self.name, self.headers)
@@ -117,6 +129,14 @@ class Command(object):
 
     def set_parameters(self, parameters=None):
         self.parameters = parameters or {}
+
+    @property
+    def user(self):
+        return self.connection.context.user
+
+    @user.setter
+    def user(self, value):
+        self.connection.context.user = value
 
 
 class CommandSpec(object):
