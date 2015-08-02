@@ -49,14 +49,19 @@ def _find_commands_in_handler(cls):
     return _commands
 
 
-def _create_help(command, name=None, help=None):
-    if command not in BaseHelpHandler.CommandList:
-        BaseHelpHandler.CommandList[command] = {"usage": [], "description": []}
-    if name is None and help is not None:
-        BaseHelpHandler.CommandList[command]["description"].insert(0, "%s" % (help,))
+def _create_help(command_name, param_name=None, help=None):
+    if command_name not in BaseHelpHandler.CommandList:
+        BaseHelpHandler.CommandList[command_name] = {"usage": [], "description": []}
+
+    if param_name is None and help is not None:
+        BaseHelpHandler.CommandList[command_name]["description"].insert(0, "%s" % (help,))
         return
-    BaseHelpHandler.CommandList[command]["usage"].insert(0, name)
-    BaseHelpHandler.CommandList[command]["description"].insert(0, "  %s %s" % (name, help))
+
+    if help:
+        BaseHelpHandler.CommandList[command_name]["description"].insert(0, "  %s %s" % (param_name, help))
+
+    if param_name:
+        BaseHelpHandler.CommandList[command_name]["usage"].insert(0, param_name)
 
 
 def parameter(name=None, multiple=False, help=None, default=None, type=None):
@@ -359,7 +364,7 @@ class CommandsCommandHandler(BaseHelpHandler):
     def commands(self):
         for command in self.CommandList.iterkeys():
             if command != "commands":
-                self.write("%s %s" % (command, " ".join(self.CommandList.get(command)["usage"])))
+                self.write("%s %s" % (command, " ".join(self.CommandList.get(command, {"usage": []}).get("usage"))))
 
     @parameter(help="command stats")
     def stats(self):
