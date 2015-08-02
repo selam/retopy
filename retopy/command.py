@@ -25,7 +25,7 @@ from tornado import gen
 from tornado.log import app_log, gen_log
 from tornado.util import import_object
 from tornado.web import Finish
-from tornado.escape import utf8, unicode_type
+from tornado.escape import utf8, unicode_type, _unicode
 
 
 def _find_commands_in_handler(cls):
@@ -95,6 +95,7 @@ class Command(object):
         self.name = command.strip()
         self.connection = connection
         self.headers = headers
+        self.parameters = {}
 
     def __repr__(self):
         return "%s(%s)" % (self.name, self.headers)
@@ -113,6 +114,9 @@ class Command(object):
            to write the response.
         """
         self.connection.finish()
+
+    def set_parameters(self, parameters=None):
+        self.parameters = parameters or {}
 
 
 class CommandSpec(object):
@@ -336,6 +340,72 @@ class CommandHandler(object):
             chunk = ("%s" % (chunk,)).lower()
         chunk = utf8(chunk)
         self._write_buffer.append(chunk)
+
+    _ARG_DEFAULT = []
+
+    def get_argument(self, name, default=_ARG_DEFAULT, strip=True):
+        """Returns the value of the argument with the given name.
+
+        If default is not provided, the argument is considered to be
+        required, and we raise a `MissingArgumentError` if it is missing.
+
+        If the argument appears in the url more than once, we return the
+        last value.
+
+        The returned value is always unicode.
+        """
+        return self._get_argument(name, default, self.command.parameters, strip)
+
+    def get_arguments(self, name, strip=True):
+        """Returns a list of the arguments with the given name.
+
+        If the argument is not present, returns an empty list.
+
+        The returned values are always unicode.
+        """
+
+        # Make sure `get_arguments` isn't accidentally being called with a
+        # positional argument that's assumed to be a default (like in
+        # `get_argument`.)
+        assert isinstance(strip, bool)
+
+        return self._get_arguments(name, self.command.parameters, strip)
+
+    def _get_argument(self, name, default, source, strip=True):
+        args = self._get_arguments(name, source, strip=strip)
+        if not args:
+            if default is self._ARG_DEFAULT:
+                raise CommandError("Missing argument : %s" % (name,))
+            return default
+        return args[-1]
+
+    def _get_arguments(self, name, source, strip=True):
+        values = []
+        for v in source.get(name, []):
+            v = self.decode_argument(v, name=name)
+            if strip:
+                v = v.strip()
+            values.append(v)
+        return values
+
+    def decode_argument(self, value, name=None):
+        """Decodes an argument from the command parameters.
+
+        The argument has been percent-decoded and is now a byte string.
+        By default, this method decodes the argument as utf-8 and returns
+        a unicode string, but this may be overridden in subclasses.
+
+        This method is used as a filter for both `get_argument()` and for
+        values extracted from the parameters
+
+        The name of the argument is provided if known, but may be None
+        (e.g. for unnamed groups in the url regex).
+        """
+        try:
+            return _unicode(value)
+        except UnicodeDecodeError:
+            raise CommandError("Invalid unicode in %s: %r" %
+                            (name or "", value[:40]))
 
 
 class CommandNotFoundHandler(CommandHandler):

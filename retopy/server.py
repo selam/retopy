@@ -78,7 +78,7 @@ class _RequestAdapter(object):
         self.executor.command_received(command)
         return self.executor.get_command_arguments()
 
-    def parameter_received(self, parameters):
+    def parameters_received(self, parameters):
         self.executor.parameters_received(parameters)
 
     def headers_received(self, headers):
@@ -362,7 +362,7 @@ class RequestConnection(object):
                     _count += 1
 
             with _ExceptionLoggingContext(app_log):
-                parameter_future = request_adapter.parameter_received(params)
+                parameter_future = request_adapter.parameters_received(params)
                 if parameter_future is not None:
                     yield parameter_future
 
@@ -549,7 +549,7 @@ class _RequestExecutor(object):
         self.handler_kwargs = spec.kwargs
 
     def parameters_received(self, parameters):
-        pass
+        self.command.set_parameters(parameters)
 
     def get_command_arguments(self):
         return self.command.get_arguments_map()
