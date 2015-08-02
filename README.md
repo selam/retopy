@@ -129,3 +129,52 @@ s = RetopyServer(MyApplication())
 s.listen(8000)
 IOLoop.instance().start()
 ```
+
+# client connection
+
+When client connected to server it must send to some headers in first line
+there is no any specific headers right now so just send it one character for test purposes.
+headers line designed for handshake with client and server for some core features like 
+gzip encoding both client and server side, authentication and such but not implemented yet, 
+usage examples will be updated after handshake implementation 
+
+after sending headers you can start sending commands,
+available commands in example above:
+```
+test_auth 
+set key value
+get key
+ping 
+authenticate username password
+increment key
+rem key
+decrement key
+```
+available commands in default handlers
+```
+commands
+help command
+stats 
+```
+# example usage:
+right now there is no client library but it will be in feature. you can test your commands with telnet
+
+```
+timu@jarjar:~$ telnet 127.0.0.1 8000  
+Trying 127.0.0.1...  
+Connected to 127.0.0.1.  
+Escape character is '^]'.  
+header line   
+increment a  
+1  
+increment a  
+2  
+increment b  
+1  
+increment a  
+3  
+rem a  
++OK  
+get a  
+-ERR a Not found  
+``` 
