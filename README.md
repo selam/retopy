@@ -1,5 +1,5 @@
 # retopy
-tornado's web.py like tcp server
+tornado's web.py like tcp server compliant with redis protocol
 
 # Usage
 
@@ -132,13 +132,9 @@ IOLoop.instance().start()
 
 # client connection
 
-When client connected to server it must send to some headers in first line
-there is no any specific headers right now so just send it one character for test purposes.
-headers line designed for handshake with client and server for some core features like 
-gzip encoding both client and server side, authentication and such but not implemented yet, 
-usage examples will be updated after handshake implementation 
+server side is fully compliant with redis protocol anyone can connect with redis.py right now, i don't have any intension to write all redis commands into retopy but ofcourse PR's are welcomed. 
+I just create this app for using my private projects for custom solutions which don't have in redis it self such as bloom filters, linear counting, top k and among another things. 
 
-after sending headers you can start sending commands,
 available commands in example above:
 ```
 test_auth 
@@ -157,22 +153,13 @@ help command
 stats 
 ```
 # example usage:
-right now there is no client library but it will be in feature. you can test your commands with telnet
+redis.py can be used for connecting and sending commands but ofcourse redis.py must be changed before using it.
 
 ```
 timu@jarjar:~$ telnet 127.0.0.1 8000  
 Trying 127.0.0.1...  
 Connected to 127.0.0.1.  
 Escape character is '^]'.  
-header line   
-increment a  
-1  
-increment a  
-2  
-increment b  
-1  
-increment a  
-3  
 rem a  
 +OK  
 get a  
