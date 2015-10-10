@@ -209,6 +209,7 @@ class ServerConnection(object):
 class RequestConnection(object):
     def __init__(self, stream, context, params):
         self.stream = stream
+        self._header_supported = False
         self.context = context
         # connection parameters
         self.params = params
@@ -250,6 +251,127 @@ class RequestConnection(object):
         self.context.set_headers(headers)
 
     @gen.coroutine
+    def multiline_buffer(self, line, request_adapter):
+        params = {}
+        if "\r\n" not in line:
+            if len(line) > 1024:
+                raise MalFormatInput("Protocol error: too big mbulk count string")
+        _length = line.strip("\r\n")
+        if len(_length) == 0 or not _length.isdigit():
+            raise MalFormatInput("Protocol error: too small mbulk count string")
+
+        _length = int(_length)
+        if _length <= 0:
+            return
+
+        yield self.stream.read_until_regex(b"\r\n") # this line is the length of input, we can skip this
+        command = yield self.stream.read_until_regex(b"\r\n")
+
+        with _ExceptionLoggingContext(app_log):
+            parameters = request_adapter.command_received(command.strip("\r\n"))
+
+        if len(parameters):
+            for i in xrange(0, _length - 1):
+                line_length = yield self.stream.read_until_regex(b"\r\n")
+                param = yield self.stream.read_until_regex(b"\r\n")
+                arg_name = parameters[i]["name"]
+                if arg_name not in params:
+                    params[arg_name] = []
+                params[arg_name].append(param.strip("\r\n"))
+
+        raise gen.Return(params)
+
+    @staticmethod
+    def inline_buffer(line, request_adapter):
+        command = ""
+        line = iter(line)
+        for char in line:
+            if char in (" ", "\r", "\n", "\t", "\0"):
+                break
+            command += char
+
+        with _ExceptionLoggingContext(app_log):
+            parameters = request_adapter.command_received(command)
+        _count = 0
+        params = {}
+        if len(parameters) > 0:
+            for char in line:
+                if char in (" ", "\t", "\n", "\r", "\v", "\f"):
+                    continue
+                in_quote = False
+                in_single_quote = False
+                current = ""
+                while True:
+                    if in_quote:
+                        if char == '\\':
+                            try:
+                                c = line.next()
+                                if c not in ('n', 'r', 't', 'b', 'a'):
+                                    char = c
+                                else:
+                                    char = "\%s" % (c)
+                            except StopIteration:
+                                raise MalFormatInput("Malformat input")
+                            current += char
+                        elif char == '"':
+                            try:
+                                c = line.next()
+                                if c not in (" ", "\t", "\r", "\n", "\v", "\f"):
+                                    raise MalFormatInput("Malformat input")
+                                break
+                            except StopIteration:
+                                raise MalFormatInput("Malformat input")
+                        else:
+                            current += char
+                    elif in_single_quote:
+                        if char == '\\':
+                            try:
+                                c = line.next()
+                                if c == '\'':
+                                    char = "'"
+                                else:
+                                    char = char + c
+                            except StopIteration:
+                                raise MalFormatInput("Malformat input")
+                            current += char
+                        elif char == '\'':
+                            try:
+                                c = line.next()
+                                if c not in (" ", "\t", "\r", "\n", "\v", "\f"):
+                                    raise MalFormatInput("Malformat input")
+                                break
+                            except StopIteration:
+                                raise MalFormatInput("Malformat input")
+                        else:
+                            current += char
+                    else:
+                        if char in (' ', '\n', '\r', '\t', '\0'):
+                            break
+                        elif char == '"':
+                            in_quote = True
+                        elif char == '\'':
+                            in_single_quote = True
+                        else:
+                            current += char
+                    try:
+                        char = line.next()
+                    except StopIteration:
+                        break
+                if parameters[_count]["type"]:
+                    try:
+                        current = parameters[_count]["type"](current)
+                    except TypeError:
+                        raise MalFormatInput("%s type must be %s" % (parameters[_count]["name"],
+                                                                     parameters[_count]["type"]))
+
+                arg_name = parameters[_count]["name"]
+                if arg_name not in params:
+                    params[arg_name] = []
+                params[arg_name].append(current)
+                _count += 1
+        return params
+
+    @gen.coroutine
     def read_response(self, request_adapter):
         """
         bu method bölünerek istemci ile aralarında kullanılacak parametreler için handshake oluşturmalı
@@ -258,7 +380,7 @@ class RequestConnection(object):
         :return: future
         """
         try:
-            if not self.headers_received:
+            if self._header_supported and not self.headers_received:
                 headers_future = self.stream.read_until_regex(b"\r\n",
                                                               max_bytes=self.params.get("max_header_size", 255))
                 if self.params.get("header_timeout", None) is None:
@@ -281,94 +403,10 @@ class RequestConnection(object):
             # wait a command
             """from here to end it's from redis it self"""
             line = yield self.stream.read_until_regex(b"\r\n")
-            line = iter(line)
-            command = ""
-            for char in line:
-                if char in (" ", "\r", "\n", "\t", "\0"):
-                    break
-                command += char
-
-            with _ExceptionLoggingContext(app_log):
-                parameters = request_adapter.command_received(command)
-
-            _count = 0
-            params = {}
-            if len(parameters) > 0:
-                for char in line:
-                    if char in (" ", "\t", "\n", "\r", "\v", "\f"):
-                        continue
-                    in_quote = False
-                    in_single_quote = False
-                    current = ""
-                    while True:
-                        if in_quote:
-                            if char == '\\':
-                                try:
-                                    c = line.next()
-                                    if c not in ('n', 'r', 't', 'b', 'a'):
-                                        char = c
-                                    else:
-                                        char = "\%s" % (c)
-                                except StopIteration:
-                                    raise MalFormatInput("Malformat input")
-                                current += char
-                            elif char == '"':
-                                try:
-                                    c = line.next()
-                                    if c not in (" ", "\t", "\r", "\n", "\v", "\f"):
-                                        raise MalFormatInput("Malformat input")
-                                    break
-                                except StopIteration:
-                                    raise MalFormatInput("Malformat input")
-                            else:
-                                current += char
-                        elif in_single_quote:
-                            if char == '\\':
-                                try:
-                                    c = line.next()
-                                    if c == '\'':
-                                        char = "'"
-                                    else:
-                                        char = char + c
-                                except StopIteration:
-                                    raise MalFormatInput("Malformat input")
-                                current += char
-                            elif char == '\'':
-                                try:
-                                    c = line.next()
-                                    if c not in (" ", "\t", "\r", "\n", "\v", "\f"):
-                                        raise MalFormatInput("Malformat input")
-                                    break
-                                except StopIteration:
-                                    raise MalFormatInput("Malformat input")
-                            else:
-                                current += char
-                        else:
-                            if char in (' ', '\n', '\r', '\t', '\0'):
-                                break
-                            elif char == '"':
-                                in_quote = True
-                            elif char == '\'':
-                                in_single_quote = True
-                            else:
-                                current += char
-                        try:
-                            char = line.next()
-                        except StopIteration:
-                            break
-                    if parameters[_count]["type"]:
-                        try:
-                            current = parameters[_count]["type"](current)
-                        except TypeError:
-                            raise MalFormatInput("%s type must be %s" % (parameters[_count]["name"],
-                                                                         parameters[_count]["type"]))
-
-                    arg_name = parameters[_count]["name"]
-                    if arg_name not in params:
-                        params[arg_name] = []
-                    params[arg_name].append(current)
-                    _count += 1
-
+            if line[0] == '*':
+                params = yield self.multiline_buffer(line[1:-1], request_adapter)
+            else:
+                params = self.inline_buffer(line, request_adapter)
             with _ExceptionLoggingContext(app_log):
                 parameter_future = request_adapter.parameters_received(params)
                 if parameter_future is not None:
@@ -382,7 +420,7 @@ class RequestConnection(object):
             # response, and we're not detached, register a close callback
             # on the stream (we didn't need one while we were reading)
             if (not self._finish_future.done() and
-                        self.stream is not None and
+                    self.stream is not None and
                     not self.stream.closed()):
                 self.stream.set_close_callback(self._on_connection_close)
                 yield self._finish_future
@@ -392,6 +430,8 @@ class RequestConnection(object):
             # we must reset read and write markers and futures
             self._reset()
         except Exception, e:
+            import traceback
+            traceback.print_exc()
             self.close()
             raise gen.Return(False)
         raise gen.Return(True)

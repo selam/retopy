@@ -78,7 +78,7 @@ class MyCounterHandler(CommandHandler):
         key = self.get_argument("key")
         MyCounterHandler._check_and_create_counter(key)
         MyCounterHandler._COUNTERS[key] = self.get_argument("value")
-        self.write(MyCounterHandler._COUNTERS[key])
+        self.write("OK")
 
     @parameter(name="key")
     def rem(self):

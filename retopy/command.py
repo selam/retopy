@@ -103,7 +103,7 @@ class Command(object):
     _COMMAND_ARGUMENT_MAP = {}
 
     def __init__(self, command=None, connection=None, headers=None):
-        self.name = command.strip()
+        self.name = command.strip().lower()
         self.connection = connection
         self.headers = headers
         self.parameters = {}
@@ -198,7 +198,7 @@ class CommandHandler(object):
 
     @classmethod
     def get_command_arguments_map(cls, command):
-        return cls._COMMAND_ARGUMENT_MAP.get(command, {})
+        return cls._COMMAND_ARGUMENT_MAP.get(command, [])
 
     @property
     def settings(self):
@@ -331,6 +331,28 @@ class CommandHandler(object):
         """
         pass
 
+    def _format_output(self, _input):
+        _formatted_response = []
+        for resp in _input:
+            if isinstance(resp, (int, float)):
+                _formatted_response.append(":{value}".format(value=resp))
+            elif resp is None:
+                _formatted_response.append(":-1")
+            elif isinstance(resp, (unicode_type, str, unicode,)):
+                if 1 < len(_input):
+                    _formatted_response.append("${len}".format(len=len(resp)))
+                    _formatted_response.append(utf8(resp))
+                elif not resp.startswith("+") and not resp.startswith("-"):
+                    _formatted_response.append("+{resp}".format(resp=resp))
+                else:
+                    _formatted_response.append(resp)
+            elif isinstance(resp, (bool,)):
+                _formatted_response.append(":{bool}".format(bool=1 if resp else 0))
+            elif isinstance(resp, (list,)):
+                _formatted_response.append("*{len}".format(len(resp)))
+                _formatted_response.extend(self._format_output(resp))
+        return _formatted_response
+
     def flush(self, callback=None):
         """Flushes the current output buffer to the network.
 
@@ -340,8 +362,11 @@ class CommandHandler(object):
         if another flush occurs before the previous flush's callback
         has been run, the previous callback will be discarded.
         """
-        chunk = b"\r\n".join(self._write_buffer)
+        _formatted_output = self._format_output(self._write_buffer)
         self._write_buffer = []
+        if 1 < len(_formatted_output):
+            _formatted_output.insert("*{len}".format(len=len(_formatted_output)), 0)
+        chunk = b"\r\n".join(_formatted_output)
         return self.command.connection.write(chunk + "\r\n", callback=callback)
 
     def _command_summary(self):
@@ -354,11 +379,11 @@ class CommandHandler(object):
         """
         if self._finished:
             raise RuntimeError("Cannot write() after finish()")
-        if not isinstance(chunk, (bytes, unicode_type, int, float, bool)):
-            raise TypeError("write() only accepts bytes,unicode, int, float, bool")
-        if isinstance(chunk, (int, float, bool)):
-            chunk = ("%s" % (chunk,)).lower()
-        chunk = utf8(chunk)
+        if not isinstance(chunk, (list, str, unicode_type, int, float, bool)):
+            raise TypeError("write() only accepts list, unicode, int, float, bool")
+        if not isinstance(chunk, (int, float, bool, list)):
+            chunk = utf8(chunk)
+
         self._write_buffer.append(chunk)
 
     _ARG_DEFAULT = []
@@ -403,7 +428,7 @@ class CommandHandler(object):
         values = []
         for v in source.get(name, []):
             v = self.decode_argument(v, name=name)
-            if strip:
+            if isinstance(v, (unicode_type,)) and strip:
                 v = v.strip()
             values.append(v)
         return values
@@ -421,6 +446,8 @@ class CommandHandler(object):
         The name of the argument is provided if known, but may be None
         (e.g. for unnamed groups in the url regex).
         """
+        if not isinstance(value, (unicode_type,)):
+            return value
         try:
             return _unicode(value)
         except UnicodeDecodeError:
