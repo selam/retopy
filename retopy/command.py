@@ -335,7 +335,11 @@ class CommandHandler(object):
         _formatted_response = []
         for resp in _input:
             if isinstance(resp, (int, float)):
-                _formatted_response.append(":{value}".format(value=resp))
+                if isinstance(resp, (bool,)):
+                    resp = ":1" if resp else ":0"
+                    _formatted_response.append(resp)
+                else:
+                    _formatted_response.append(":{value}".format(value=resp))
             elif resp is None:
                 _formatted_response.append(":-1")
             elif isinstance(resp, (unicode_type, str, unicode,)):
@@ -346,8 +350,6 @@ class CommandHandler(object):
                     _formatted_response.append("+{resp}".format(resp=resp))
                 else:
                     _formatted_response.append(resp)
-            elif isinstance(resp, (bool,)):
-                _formatted_response.append(":{bool}".format(bool=1 if resp else 0))
             elif isinstance(resp, (list,)):
                 _formatted_response.append("*{len}".format(len(resp)))
                 _formatted_response.extend(self._format_output(resp))
@@ -365,7 +367,7 @@ class CommandHandler(object):
         _formatted_output = self._format_output(self._write_buffer)
         self._write_buffer = []
         if 1 < len(_formatted_output):
-            _formatted_output.insert("*{len}".format(len=len(_formatted_output)), 0)
+            _formatted_output.insert(0, "*{len}".format(len=len(_formatted_output) / 2))
         chunk = b"\r\n".join(_formatted_output)
         return self.command.connection.write(chunk + "\r\n", callback=callback)
 
