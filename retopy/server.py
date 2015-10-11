@@ -430,9 +430,6 @@ class RequestConnection(object):
             # we must reset read and write markers and futures
             self._reset()
         except Exception, e:
-            import traceback
-            traceback.print_exc()
-            self.close()
             raise gen.Return(False)
         raise gen.Return(True)
 
