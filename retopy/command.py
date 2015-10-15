@@ -344,14 +344,13 @@ class CommandHandler(object):
                 _formatted_response.append(":-1")
             elif isinstance(resp, (unicode_type, str, unicode,)):
                 if 1 < len(_input):
-                    _formatted_response.append("${len}".format(len=len(resp)))
-                    _formatted_response.append(utf8(resp))
+                    _formatted_response.append("${len}\r\n{resp}".format(len=len(resp), resp=resp))
                 elif not resp.startswith("+") and not resp.startswith("-"):
                     _formatted_response.append("+{resp}".format(resp=resp))
                 else:
                     _formatted_response.append(resp)
-            elif isinstance(resp, (list,)):
-                _formatted_response.append("*{len}".format(len(resp)))
+            elif isinstance(resp, (list, set, tuple)):
+                _formatted_response.append("*{len}".format(len=len(resp)))
                 _formatted_response.extend(self._format_output(resp))
         return _formatted_response
 
@@ -366,8 +365,6 @@ class CommandHandler(object):
         """
         _formatted_output = self._format_output(self._write_buffer)
         self._write_buffer = []
-        if 1 < len(_formatted_output):
-            _formatted_output.insert(0, "*{len}".format(len=len(_formatted_output) / 2))
         chunk = b"\r\n".join(_formatted_output)
         return self.command.connection.write(chunk + "\r\n", callback=callback)
 
